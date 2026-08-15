@@ -1,0 +1,5 @@
+maze_solver
+*.o
+*.out
+vgcore.*
+.style-reference/
