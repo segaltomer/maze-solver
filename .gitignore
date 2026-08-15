@@ -3,3 +3,4 @@ maze_solver
 *.out
 vgcore.*
 .style-reference/*.pdf
+*.pdf
