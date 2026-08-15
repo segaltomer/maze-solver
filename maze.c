@@ -339,6 +339,16 @@ static int solve(const Maze *m,size_t sr,size_t sc,char **out) {
     return res;
 }
 
+/* TODO part C: gate evaluation is not implemented yet */
+MazeResult check_extended_maze(const char *maze_path,const char *expressions_dir) {
+    MazeResult res={MAZE_INVALID,NULL};
+
+    (void)maze_path;
+    (void)expressions_dir;
+    sys_err=NULL;
+    return res;
+}
+
 MazeResult check_maze(const char *maze_path) {
     MazeResult res={MAZE_INVALID,NULL};
     Maze m;
