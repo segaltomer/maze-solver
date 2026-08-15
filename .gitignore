@@ -2,5 +2,7 @@ maze_solver
 *.o
 *.out
 vgcore.*
-.style-reference/*.pdf
+.style-reference/
 *.pdf
+*.pdf
+examples/
