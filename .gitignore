@@ -2,4 +2,4 @@ maze_solver
 *.o
 *.out
 vgcore.*
-.style-reference/
+.style-reference/*.pdf
