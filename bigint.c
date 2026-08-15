@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <limits.h>
 #include "bigint.h"
 
 #define BITS_PER_BLK 32
@@ -247,6 +248,120 @@ BigInt *bi_neg(const BigInt *x) {
         carry=t>>BITS_PER_BLK;
     }
     mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+/* the shift amount may be far larger than any built in type */
+int bi_to_size(const BigInt *x,size_t *out) {
+    uint64_t v=0;
+    size_t mb=bi_min_bits(x),i;
+    if(mb>sizeof(size_t)*CHAR_BIT||mb>64)
+        return 0;
+    for(i=x->nblk>2?2:x->nblk;i;i--)
+        v=(v<<BITS_PER_BLK)|x->blk[i-1];
+    *out=(size_t)v;
+    return 1;
+}
+
+BigInt *bi_not(const BigInt *x) {
+    BigInt *r=bi_zero(x->width);
+    size_t i;
+    if(!r)
+        return NULL;
+    for(i=0;i<r->nblk;i++)
+        r->blk[i]=~x->blk[i];
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+/* the shorter operand is zero extended; missing blocks simply read as zero */
+static BigInt *bitop(const BigInt *a,const BigInt *b,char op) {
+    BigInt *r=bi_zero(a->width>b->width?a->width:b->width);
+    size_t i;
+    if(!r)
+        return NULL;
+    for(i=0;i<r->nblk;i++)
+    {
+        uint32_t av=i<a->nblk?a->blk[i]:0u;
+        uint32_t bv=i<b->nblk?b->blk[i]:0u;
+        r->blk[i]=op=='&'?(av&bv):op=='|'?(av|bv):(av^bv);
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+BigInt *bi_and(const BigInt *a,const BigInt *b) {
+    return bitop(a,b,'&');
+}
+
+BigInt *bi_or(const BigInt *a,const BigInt *b) {
+    return bitop(a,b,'|');
+}
+
+BigInt *bi_xor(const BigInt *a,const BigInt *b) {
+    return bitop(a,b,'^');
+}
+
+/* appends k zero bits on the right; no high bit is ever discarded */
+BigInt *bi_shl(const BigInt *x,size_t k) {
+    BigInt *r;
+    size_t lsh=k/BITS_PER_BLK,bsh=k%BITS_PER_BLK,i;
+    if(x->width>SIZE_MAX-k)
+        return NULL;
+    r=bi_zero(x->width+k);
+    if(!r)
+        return NULL;
+    for(i=0;i<x->nblk;i++)
+    {
+        uint64_t v=(uint64_t)x->blk[i]<<bsh;
+        size_t j=i+lsh;
+        if(j<r->nblk)
+            r->blk[j]|=(uint32_t)v;
+        if(bsh&&j+1<r->nblk)
+            r->blk[j+1]|=(uint32_t)(v>>BITS_PER_BLK);
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+/* logical right shift keeps the current width, even when k >= width */
+BigInt *bi_shr_log(const BigInt *x,size_t k) {
+    BigInt *r=bi_zero(x->width);
+    size_t lsh,bsh,i;
+    if(!r||k>=x->width)
+        return r;
+    lsh=k/BITS_PER_BLK;
+    bsh=k%BITS_PER_BLK;
+    for(i=0;i+lsh<x->nblk;i++)
+    {
+        uint64_t v=x->blk[i+lsh]>>bsh;
+        if(bsh&&i+lsh+1<x->nblk)
+            v|=(uint64_t)x->blk[i+lsh+1]<<(BITS_PER_BLK-bsh);
+        r->blk[i]=(uint32_t)v;
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+BigInt *bi_shr_arith(const BigInt *x,size_t k) {
+    BigInt *r;
+    size_t i;
+    int neg=bi_top_bit(x);
+    if(k>=x->width)
+    {
+        r=bi_zero(x->width);
+        if(!r||!neg)
+            return r;
+        for(i=0;i<r->nblk;i++)
+            r->blk[i]=0xFFFFFFFFu;
+        mask_bits(r->blk,r->nblk,r->width);
+        return r;
+    }
+    r=bi_shr_log(x,k);
+    if(!r||!neg)
+        return r;
+    for(i=x->width-k;i<x->width;i++)
+        r->blk[i/BITS_PER_BLK]|=(uint32_t)1u<<(i%BITS_PER_BLK);
     return r;
 }
 

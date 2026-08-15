@@ -30,6 +30,17 @@ BigInt *bi_truncate(const BigInt *x,size_t n);
 BigInt *bi_sext(const BigInt *x,size_t n);
 BigInt *bi_norm_unl(const BigInt *x);
 
+/* 0 when the value does not fit a size_t; compare against the width first */
+int bi_to_size(const BigInt *x,size_t *out);
+
+BigInt *bi_not(const BigInt *x);
+BigInt *bi_and(const BigInt *a,const BigInt *b);
+BigInt *bi_or(const BigInt *a,const BigInt *b);
+BigInt *bi_xor(const BigInt *a,const BigInt *b);
+BigInt *bi_shl(const BigInt *x,size_t k);
+BigInt *bi_shr_log(const BigInt *x,size_t k);
+BigInt *bi_shr_arith(const BigInt *x,size_t k);
+
 BigInt *bi_add(const BigInt *a,const BigInt *b);
 BigInt *bi_sub_exact(const BigInt *a,const BigInt *b);
 BigInt *bi_sub_wrap(const BigInt *a,const BigInt *b,size_t n);
