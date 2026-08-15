@@ -23,5 +23,17 @@ size_t bi_width(const BigInt *x);
 size_t bi_min_bits(const BigInt *x);
 int bi_is_zero(const BigInt *x);
 int bi_top_bit(const BigInt *x);
+int bi_cmp(const BigInt *a,const BigInt *b);
+
+/* width policy: fixed modes truncate to N, UNLIMITED uses min_bits+1 */
+BigInt *bi_truncate(const BigInt *x,size_t n);
+BigInt *bi_sext(const BigInt *x,size_t n);
+BigInt *bi_norm_unl(const BigInt *x);
+
+BigInt *bi_add(const BigInt *a,const BigInt *b);
+BigInt *bi_sub_exact(const BigInt *a,const BigInt *b);
+BigInt *bi_sub_wrap(const BigInt *a,const BigInt *b,size_t n);
+BigInt *bi_mul(const BigInt *a,const BigInt *b);
+BigInt *bi_neg(const BigInt *x);
 
 #endif

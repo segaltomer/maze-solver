@@ -96,6 +96,160 @@ int bi_top_bit(const BigInt *x) {
     return (int)((x->blk[pos/BITS_PER_BLK]>>(pos%BITS_PER_BLK))&1u);
 }
 
+/* unsigned comparison; differing widths are handled as zero extension */
+int bi_cmp(const BigInt *a,const BigInt *b) {
+    size_t i=a->nblk>b->nblk?a->nblk:b->nblk;
+    while(i)
+    {
+        uint32_t av=i-1<a->nblk?a->blk[i-1]:0u;
+        uint32_t bv=i-1<b->nblk?b->blk[i-1]:0u;
+        if(av!=bv)
+            return av>bv?1:-1;
+        i--;
+    }
+    return 0;
+}
+
+BigInt *bi_truncate(const BigInt *x,size_t n) {
+    BigInt *r=bi_zero(n);
+    size_t k;
+    if(!r)
+        return NULL;
+    k=r->nblk<x->nblk?r->nblk:x->nblk;
+    memcpy(r->blk,x->blk,k*sizeof(uint32_t));
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+BigInt *bi_sext(const BigInt *x,size_t n) {
+    BigInt *r;
+    size_t i;
+    if(n<=x->width)
+        return bi_truncate(x,n);
+    r=bi_truncate(x,n);
+    if(!r||!bi_top_bit(x))
+        return r;
+    for(i=x->width;i<n;i++)
+        r->blk[i/BITS_PER_BLK]|=(uint32_t)1u<<(i%BITS_PER_BLK);
+    return r;
+}
+
+/* section 4.3.1 rule 2: minimum bits for the value plus one leading zero */
+BigInt *bi_norm_unl(const BigInt *x) {
+    size_t mb=bi_min_bits(x);
+    if(!mb)
+        return bi_zero(1);
+    if(mb>SIZE_MAX-1)
+        return NULL;
+    return bi_truncate(x,mb+1);
+}
+
+BigInt *bi_add(const BigInt *a,const BigInt *b) {
+    BigInt *r;
+    size_t w=a->width>b->width?a->width:b->width,i;
+    uint64_t carry=0;
+    if(w>SIZE_MAX-1)
+        return NULL;
+    r=bi_zero(w+1);
+    if(!r)
+        return NULL;
+    for(i=0;i<r->nblk;i++)
+    {
+        uint64_t t=carry;
+        if(i<a->nblk)
+            t+=a->blk[i];
+        if(i<b->nblk)
+            t+=b->blk[i];
+        r->blk[i]=(uint32_t)t;
+        carry=t>>BITS_PER_BLK;
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+static BigInt *sub_at(const BigInt *a,const BigInt *b,size_t n) {
+    BigInt *r=bi_zero(n);
+    size_t i;
+    uint64_t borrow=0;
+    if(!r)
+        return NULL;
+    for(i=0;i<r->nblk;i++)
+    {
+        uint64_t av=i<a->nblk?a->blk[i]:0u;
+        uint64_t sub=(i<b->nblk?b->blk[i]:0u)+borrow;
+        if(av>=sub)
+        {
+            r->blk[i]=(uint32_t)(av-sub);
+            borrow=0;
+        }
+        else
+        {
+            r->blk[i]=(uint32_t)(av+((uint64_t)1<<BITS_PER_BLK)-sub);
+            borrow=1;
+        }
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+/* the caller must have checked a >= b; UNLIMITED never wraps */
+BigInt *bi_sub_exact(const BigInt *a,const BigInt *b) {
+    return sub_at(a,b,a->width>b->width?a->width:b->width);
+}
+
+BigInt *bi_sub_wrap(const BigInt *a,const BigInt *b,size_t n) {
+    return sub_at(a,b,n);
+}
+
+BigInt *bi_mul(const BigInt *a,const BigInt *b) {
+    BigInt *r;
+    size_t i,j;
+    if(a->width>SIZE_MAX-b->width)
+        return NULL;
+    r=bi_zero(a->width+b->width);
+    if(!r)
+        return NULL;
+    for(i=0;i<a->nblk;i++)
+    {
+        uint64_t carry=0;
+        if(!a->blk[i])
+            continue;
+        for(j=0;j<b->nblk&&i+j<r->nblk;j++)
+        {
+            uint64_t t=(uint64_t)a->blk[i]*b->blk[j]+r->blk[i+j]+carry;
+            r->blk[i+j]=(uint32_t)t;
+            carry=t>>BITS_PER_BLK;
+        }
+        for(j=i+b->nblk;carry&&j<r->nblk;j++)
+        {
+            uint64_t t=(uint64_t)r->blk[j]+carry;
+            r->blk[j]=(uint32_t)t;
+            carry=t>>BITS_PER_BLK;
+        }
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
+BigInt *bi_neg(const BigInt *x) {
+    BigInt *r=bi_zero(x->width);
+    size_t i;
+    uint64_t carry=1;
+    if(!r)
+        return NULL;
+    for(i=0;i<r->nblk;i++)
+        r->blk[i]=~x->blk[i];
+    mask_bits(r->blk,r->nblk,r->width);
+    for(i=0;i<r->nblk&&carry;i++)
+    {
+        uint64_t t=(uint64_t)r->blk[i]+carry;
+        r->blk[i]=(uint32_t)t;
+        carry=t>>BITS_PER_BLK;
+    }
+    mask_bits(r->blk,r->nblk,r->width);
+    return r;
+}
+
 /* wrap a raw block buffer in a BigInt of minimal width */
 static BigInt *from_blocks(const uint32_t *buf,size_t n) {
     BigInt *x;
