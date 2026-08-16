@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <errno.h>
 #include "maze.h"
 #include "expression.h"
 
@@ -19,12 +20,26 @@ typedef struct
 } Maze;
 
 static const char *sys_err=NULL;
+static char *err_path=NULL;
 
 /* part C surfaces a gate file system error through the maze channel */
 extern const char *expr_error(void);
 
 const char *maze_error(void) {
     return sys_err;
+}
+
+/* the file a system error is actually about, when that is not the maze the
+   caller named: a part C failure usually concerns one gate file. ownership
+   passes to the caller, which must call maze_error_clear once it has
+   reported the message */
+const char *maze_error_path(void) {
+    return err_path;
+}
+
+void maze_error_clear(void) {
+    free(err_path);
+    err_path=NULL;
 }
 
 static int grow_rows(Maze *m) {
@@ -85,7 +100,7 @@ static int read_maze(const char *path,Maze *m) {
     FILE *f;
     char *buf=NULL;
     size_t len=0,cap=0;
-    int c,ok=1;
+    int c,ok=1,err=0;
 
     m->rows=NULL;
     m->nrows=0;
@@ -132,9 +147,11 @@ static int read_maze(const char *path,Maze *m) {
         }
         buf[len++]=(char)c;
     }
+    err=errno;
     if(ok&&ferror(f))
     {
-        sys_err="cannot read maze file";
+        /* a directory opens fine and only fails on the first read */
+        sys_err=err==EISDIR?"is a directory, not a maze file":"cannot read maze file";
         ok=0;
     }
     if(ok&&len&&buf[len-1]=='\r')
@@ -415,7 +432,7 @@ static int eval_gates(const Maze *m,const char *dir,unsigned char *gopen) {
         if(expr_error())
         {
             sys_err=expr_error();
-            free(path);
+            err_path=path; /* blame the gate file, not the maze */
             free(er.result_str);
             return 0;
         }
@@ -435,6 +452,7 @@ MazeResult check_extended_maze(const char *maze_path,const char *expressions_dir
     int found;
 
     sys_err=NULL;
+    maze_error_clear();
     if(!read_maze(maze_path,&m))
         return res;
     if(validate_maze(&m,&sr,&sc,1)&&eval_gates(&m,expressions_dir,gopen))
@@ -456,6 +474,7 @@ MazeResult check_maze(const char *maze_path) {
     int found;
 
     sys_err=NULL;
+    maze_error_clear();
     if(!read_maze(maze_path,&m))
         return res;
     if(validate_maze(&m,&sr,&sc,0))

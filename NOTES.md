@@ -159,6 +159,27 @@ Closing that window properly means fixing the conversion, not lowering the
 threshold; lowering it only narrows the window while risking rejection of
 legitimate widths.
 
+**System errors name the file they are actually about.** `main` prints
+`error: <path>: <message>`, and for Parts A and B that path is the one the
+caller named. Part C is different: the failure is usually a *gate* file, so
+blaming the maze produced self-contradictions like
+`two_gate_maze.txt: cannot open expression file`. `maze_error_path()` now
+carries the offending gate path when there is one, and `main` prefers it. The
+path is heap-allocated, so ownership passes to `main`, which calls
+`maze_error_clear()` after reporting — otherwise it would show up under
+`--show-leak-kinds=all` as still reachable, which the spec's own Valgrind
+command reports.
+
+**Error messages distinguish "too large" from "out of memory".** A width past
+`ALLOC_REFUSE_BITS` is rejected up front by `bi_width_supported` and reported
+as `bit width is too large to allocate`; calling it an allocation failure was
+misleading, since nothing was ever allocated. A width *within* the guard that
+genuinely fails to allocate still says `out of memory`, which is accurate
+there — `SIGNED 4294967296` (exactly the guard limit, 512 MB per value) takes
+that path. Opening a directory now says `is a directory, not a maze file`
+rather than `cannot read maze file`, detected via `EISDIR` on the first read,
+since a directory opens successfully and only fails when read.
+
 **Part C: validate maze structure fully before opening any gate file.** An
 invalid maze is invalid regardless of what the gates say, and touching the
 filesystem before knowing that is work that can fail for unrelated reasons.

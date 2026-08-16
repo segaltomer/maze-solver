@@ -30,6 +30,12 @@ static size_t blks_for(size_t width) {
     return (width+BITS_PER_BLK-1)/BITS_PER_BLK;
 }
 
+/* lets a caller reject an impossible width up front and say so precisely,
+   rather than meeting it later as an ordinary allocation failure */
+int bi_width_supported(size_t width) {
+    return width&&(uint64_t)width<=ALLOC_REFUSE_BITS&&width<=SIZE_MAX-BITS_PER_BLK;
+}
+
 static void mask_bits(uint32_t *b,size_t n,size_t width) {
     size_t used=width%BITS_PER_BLK;
     if(used&&n)
@@ -48,7 +54,7 @@ static size_t bits_in(uint32_t v) {
 
 BigInt *bi_zero(size_t width) {
     BigInt *x;
-    if(!width||(uint64_t)width>ALLOC_REFUSE_BITS||width>SIZE_MAX-BITS_PER_BLK)
+    if(!bi_width_supported(width))
         return NULL;
     x=malloc(sizeof(*x));
     if(!x)

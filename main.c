@@ -6,6 +6,8 @@
 
 /* system-error channels; MazeResult and ExpressionResult cannot carry them */
 extern const char *maze_error(void);
+extern const char *maze_error_path(void);
+extern void maze_error_clear(void);
 extern const char *expr_error(void);
 
 static void usage(const char *prog) {
@@ -18,7 +20,10 @@ static void usage(const char *prog) {
 static int run_maze(MazeResult res,const char *path) {
     if(maze_error())
     {
-        fprintf(stderr,"error: %s: %s\n",path,maze_error());
+        /* in part C the failing file is usually a gate file, not the maze */
+        const char *blame=maze_error_path();
+        fprintf(stderr,"error: %s: %s\n",blame?blame:path,maze_error());
+        maze_error_clear();
         free(res.path);
         return EXIT_FAILURE;
     }

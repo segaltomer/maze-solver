@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 #include "expression.h"
 #include "bigint.h"
 
@@ -94,7 +95,9 @@ static int read_file(const char *path,char **out,size_t *len) {
     }
     if(ferror(f))
     {
-        sys_err="cannot read expression file";
+        /* a directory opens fine and only fails on the first read */
+        sys_err=errno==EISDIR?"is a directory, not an expression file"
+                             :"cannot read expression file";
         free(buf);
         fclose(f);
         return 0;
@@ -687,6 +690,14 @@ ExpressionResult evaluate_expression_file(const char *file_path) {
         i++;
     if(!parse_header(buf,i))
     {
+        free(buf);
+        return res;
+    }
+    /* a well formed but unallocatable width is a system error, and saying so
+       here keeps it from surfacing later as an ordinary allocation failure */
+    if(mode!=MODE_UNLIMITED&&!bi_width_supported(nbits))
+    {
+        sys_err="bit width is too large to allocate";
         free(buf);
         return res;
     }

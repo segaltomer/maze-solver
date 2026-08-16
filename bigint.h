@@ -19,6 +19,9 @@ BigInt *bi_from_hex(const char *s,size_t len);
 
 char *bi_to_dec(const BigInt *x,int is_signed);
 
+/* 0 when a value of this width could never be allocated */
+int bi_width_supported(size_t width);
+
 size_t bi_width(const BigInt *x);
 size_t bi_min_bits(const BigInt *x);
 int bi_is_zero(const BigInt *x);
