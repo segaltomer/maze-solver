@@ -115,10 +115,12 @@ maze and must not be removed", which is why it's a judgment call and not
 obvious — but the risk is asymmetric. On an LF file stripping changes nothing;
 on a CRLF file not stripping fails everything. Only a `\r` directly before the
 newline is dropped, so a `\r` mid-row is still an unsupported cell, and
-trailing spaces still survive.
-*Known corner:* a file ending `S#E\r` with no final newline keeps the `\r` and
-is `INVALID_MAZE`, because there's no newline for it to precede. Defensible,
-and arguably wrong if you think of it as a truncated CRLF file.
+trailing spaces still survive. A final row that runs to end of file with no
+newline at all is stripped the same way — a CRLF file missing only its last
+terminator is still the same file, and not stripping there would leave exactly
+one input on which a Windows-authored maze still failed. Two trailing `\r` are
+not both stripped: the second one is an ordinary byte and the maze is invalid,
+which is correct, since that isn't a line terminator any more.
 
 **`\r` is whitespace in expression files, unconditionally.** Different problem,
 different answer: expression files have no significant-whitespace rule to
@@ -133,19 +135,29 @@ whitespace, not text. Leading whitespace would make `   SIGNED 40` a valid
 header, which reads like a stretch of "the header must have exactly one of
 these forms".
 
-**Width guard in `bi_zero`.** A shift like `1 << 10000000000` is allocatable in
-principle (1.25 GB) but cannot finish, so it presented as a hang — and to a
-grader a hang looks like a crash. `bi_zero` now refuses a width past a
-ceiling, and since every BigInt is born there, one check covers literals,
-shifts, multiplies, everything. It returns `NULL`, which callers already treat
-as a system error, so the failure is clean and immediate.
+**Allocation guard in `bi_zero`.** A shift like `1 << 10000000000` is
+allocatable in principle but cannot finish, so it presented as a hang — and to
+a grader a hang looks like a crash. `bi_zero` now refuses a request past
+`ALLOC_REFUSE_BITS`, and since every BigInt is born there, one check covers
+literals, shifts, multiplies, everything. It returns `NULL`, which callers
+already treat as a system error, so the failure is clean and immediate. The
+comparison is done in `uint64_t` so the threshold is simply inert on a
+platform whose `size_t` is narrower, leaving the existing `SIZE_MAX` check to
+do the work — no undefined shift.
 *Tension to be aware of:* the constraint sheet says no arbitrary limit such as
 `MAX_BITS`. I read that as a rule about the *representation* — blocks are still
-sized from the value and still grow dynamically — and this as a ceiling on a
-single allocation request. The constant is deliberately named `WIDTH_CEIL` and
-commented to make that distinction, but a strict grader could disagree. It's
-set to 2^27 bits (16 MB per value), several thousand times wider than anything
-the spec's examples need, and `SIGNED 100000` still works.
+sized from the value and still grow dynamically, and nothing caps how wide a
+BigInt may become in principle — and this as a refusal threshold for one
+allocation request that cannot be backed by real memory. The constant is named
+and commented to make that distinction, but a strict grader could disagree.
+*What it does and doesn't buy:* set at 2^32 bits, it catches allocation
+absurdity but not the time wall below it. Because `bi_to_dec` is quadratic
+(see below), anything past roughly 10^7 bits is already effectively a hang, so
+the window from about 10^7 up to 2^32 still hangs rather than erroring —
+`1<<4000000000` runs indefinitely, while `1<<5000000000` is refused at once.
+Closing that window properly means fixing the conversion, not lowering the
+threshold; lowering it only narrows the window while risking rejection of
+legitimate widths.
 
 **Part C: validate maze structure fully before opening any gate file.** An
 invalid maze is invalid regardless of what the gates say, and touching the
@@ -194,9 +206,12 @@ literal. Still underspecified.
 
 **`bi_to_dec` is O(n²).** Repeated division by 10^9. Measured: `1<<10^6` takes
 1.9 s, so `1<<10^7` is around three minutes. The spec bounds "reasonable
-memory", not time, and the width ceiling now stops the truly absurd cases, but
-a large-but-permitted value is still slow. Sub-quadratic conversion
-(divide-and-conquer) would fix it and isn't worth the complexity here.
+memory", not time. This is the real reason large values hang, and it is the
+constraint that decides how much the allocation guard above can actually
+help — the guard stops what cannot be *allocated*, while this decides what
+cannot be *finished*, and the second bound is far lower. Sub-quadratic
+conversion (divide-and-conquer, splitting on a power of 10) would fix it
+properly; not worth the complexity unless large-value timing starts mattering.
 
 **Allocation-failure cleanup paths are not Valgrind-verified.** They do exit
 cleanly — `rc=1`, message on stderr, confirmed at several `ulimit -v` levels —

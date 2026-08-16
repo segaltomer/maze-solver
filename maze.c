@@ -77,8 +77,10 @@ static void free_maze(Maze *m) {
 
 /* '\n' ends a row and is not stored, and a single '\r' directly before it is
    taken as part of that terminator so CRLF files read the same as LF ones. a
-   '\r' anywhere else is an ordinary byte, and so an unsupported cell. every
-   other byte, spaces included, is kept verbatim */
+   final row that runs to end of file is treated the same way, since a CRLF
+   file missing only its last terminator is still the same file. a '\r'
+   anywhere else is an ordinary byte, and so an unsupported cell. every other
+   byte, spaces included, is kept verbatim */
 static int read_maze(const char *path,Maze *m) {
     FILE *f;
     char *buf=NULL;
@@ -135,6 +137,8 @@ static int read_maze(const char *path,Maze *m) {
         sys_err="cannot read maze file";
         ok=0;
     }
+    if(ok&&len&&buf[len-1]=='\r')
+        len--;
     if(ok&&len&&!push_row(m,buf,len))
         ok=0;
     free(buf);

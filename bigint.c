@@ -8,13 +8,15 @@
 #define DEC_CHUNK 1000000000u
 #define DEC_CHUNK_DIGITS 9
 
-/* a ceiling on one allocation request, not a limit on the representation:
-   blocks are still sized from the value and grow as needed, but a width this
-   far past anything storable cannot finish in usable time or memory. every
-   BigInt is born in bi_zero, so refusing here turns an absurd width into the
-   system error the spec asks for instead of a hang. 2^27 bits is 16MB per
-   value, several thousand times the widest width any example needs */
-#define WIDTH_CEIL ((size_t)1<<27)
+/* a refusal threshold for one allocation request, not a limit on the
+   representation: blocks are still sized from the value and still grow as
+   needed, and nothing here caps how wide a BigInt may become in principle.
+   it only rejects a single request so large it cannot be backed by real
+   memory. every BigInt is born in bi_zero, so refusing here turns an absurd
+   width into the system error the spec asks for instead of an apparent hang.
+   compared as uint64_t so the threshold is simply inert where size_t is
+   narrower than it, leaving the SIZE_MAX check below to do the work */
+#define ALLOC_REFUSE_BITS ((uint64_t)1<<32)
 
 /* blk is little endian; bits above width in the top block are always zero */
 struct BigInt
@@ -46,7 +48,7 @@ static size_t bits_in(uint32_t v) {
 
 BigInt *bi_zero(size_t width) {
     BigInt *x;
-    if(!width||width>WIDTH_CEIL||width>SIZE_MAX-BITS_PER_BLK)
+    if(!width||(uint64_t)width>ALLOC_REFUSE_BITS||width>SIZE_MAX-BITS_PER_BLK)
         return NULL;
     x=malloc(sizeof(*x));
     if(!x)
