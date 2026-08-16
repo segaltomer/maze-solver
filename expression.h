@@ -1,7 +1,7 @@
 #ifndef EXPRESSION_H
 #define EXPRESSION_H
 
-#define BONUS_DIV_MOD_IMPLEMENTED 0
+#define BONUS_DIV_MOD_IMPLEMENTED 1
 
 typedef enum {
     EXPR_VALID,

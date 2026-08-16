@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "maze.h"
+#include "expression.h"
 
 typedef struct
 {
@@ -18,6 +19,9 @@ typedef struct
 } Maze;
 
 static const char *sys_err=NULL;
+
+/* part C surfaces a gate file system error through the maze channel */
+extern const char *expr_error(void);
 
 const char *maze_error(void) {
     return sys_err;
@@ -135,14 +139,21 @@ static int read_maze(const char *path,Maze *m) {
     return ok;
 }
 
-/* part A cells are only S, E, '#' and ' '; gate characters belong to part C */
-static int validate_maze(const Maze *m,size_t *sr,size_t *sc) {
+/* a gate is a digit or latin letter; S and E are reserved, so 62 remain */
+static int is_gate(unsigned char ch) {
+    if(ch=='S'||ch=='E')
+        return 0;
+    return (ch>='0'&&ch<='9')||(ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z');
+}
+
+/* part A cells are only S, E, '#' and ' '; part C also permits gates */
+static int validate_maze(const Maze *m,size_t *sr,size_t *sc,int gates) {
     size_t r,c,ns=0,ne=0;
     for(r=0;r<m->nrows;r++)
     {
         for(c=0;c<m->rows[r].len;c++)
         {
-            char ch=m->rows[r].cells[c];
+            unsigned char ch=(unsigned char)m->rows[r].cells[c];
             if(ch=='S')
             {
                 ns++;
@@ -151,7 +162,7 @@ static int validate_maze(const Maze *m,size_t *sr,size_t *sc) {
             }
             else if(ch=='E')
                 ne++;
-            else if(ch!='#'&&ch!=' ')
+            else if(ch!='#'&&ch!=' '&&!(gates&&is_gate(ch)))
                 return 0;
         }
     }
@@ -172,9 +183,12 @@ static char cell_at(const Maze *m,size_t r,size_t c) {
     return m->rows[r].cells[c];
 }
 
-static int open_cell(const Maze *m,size_t r,size_t c) {
-    char ch=cell_at(m,r,c);
-    return ch=='#'||ch=='S'||ch=='E';
+/* gopen is NULL in part A, otherwise it holds one open flag per gate byte */
+static int open_cell(const Maze *m,size_t r,size_t c,const unsigned char *gopen) {
+    unsigned char ch=(unsigned char)cell_at(m,r,c);
+    if(ch=='#'||ch=='S'||ch=='E')
+        return 1;
+    return gopen&&is_gate(ch)&&gopen[ch];
 }
 
 static int step_to(size_t r,size_t c,int d,size_t *nr,size_t *nc) {
@@ -296,7 +310,7 @@ static char *build_path(char **seen,size_t er,size_t ec,size_t sr,size_t sc) {
 }
 
 /* 1 path found, 0 unreachable, -1 system error */
-static int solve(const Maze *m,size_t sr,size_t sc,char **out) {
+static int solve(const Maze *m,size_t sr,size_t sc,char **out,const unsigned char *gopen) {
     char **seen;
     Pos *q=NULL;
     size_t qcap=0,qn=0,qh=0;
@@ -324,7 +338,7 @@ static int solve(const Maze *m,size_t sr,size_t sc,char **out) {
         }
         for(d=0;d<4;d++)
         {
-            if(!step_to(r,c,d,&nr,&nc)||!open_cell(m,nr,nc)||seen[nr][nc])
+            if(!step_to(r,c,d,&nr,&nc)||!open_cell(m,nr,nc,gopen)||seen[nr][nc])
                 continue;
             seen[nr][nc]=MOVES[d];
             if(!q_push(&q,&qcap,&qn,nr,nc))
@@ -339,13 +353,87 @@ static int solve(const Maze *m,size_t sr,size_t sc,char **out) {
     return res;
 }
 
-/* TODO part C: gate evaluation is not implemented yet */
+/* dir/ch.txt, with the separator added only when the caller left it out */
+static char *gate_path(const char *dir,unsigned char ch) {
+    size_t n=strlen(dir),extra;
+    char *p;
+    int sep=n&&dir[n-1]!='/';
+    extra=(size_t)(sep?1:0)+5;
+    if(n>SIZE_MAX-extra-1)
+    {
+        sys_err="expressions directory path is too long";
+        return NULL;
+    }
+    p=malloc(n+extra+1);
+    if(!p)
+    {
+        sys_err="out of memory while building a gate path";
+        return NULL;
+    }
+    memcpy(p,dir,n);
+    if(sep)
+        p[n++]='/';
+    p[n]=(char)ch;
+    memcpy(p+n+1,".txt",5);
+    return p;
+}
+
+/* each distinct gate byte is looked up once, however often it occurs */
+static int eval_gates(const Maze *m,const char *dir,unsigned char *gopen) {
+    unsigned char need[256]={0};
+    size_t r,c,i;
+
+    for(r=0;r<m->nrows;r++)
+        for(c=0;c<m->rows[r].len;c++)
+        {
+            unsigned char ch=(unsigned char)m->rows[r].cells[c];
+            if(is_gate(ch))
+                need[ch]=1;
+        }
+    for(i=0;i<256;i++)
+    {
+        ExpressionResult er;
+        char *path;
+        if(!need[i])
+            continue;
+        path=gate_path(dir,(unsigned char)i);
+        if(!path)
+            return 0;
+        er=evaluate_expression_file(path);
+        if(expr_error())
+        {
+            sys_err=expr_error();
+            free(path);
+            free(er.result_str);
+            return 0;
+        }
+        if(er.status==EXPR_VALID&&strcmp(er.result_str,"0"))
+            gopen[i]=1;
+        free(er.result_str);
+        free(path);
+    }
+    return 1;
+}
+
 MazeResult check_extended_maze(const char *maze_path,const char *expressions_dir) {
     MazeResult res={MAZE_INVALID,NULL};
+    unsigned char gopen[256]={0};
+    Maze m;
+    size_t sr,sc;
+    int found;
 
-    (void)maze_path;
-    (void)expressions_dir;
     sys_err=NULL;
+    if(!read_maze(maze_path,&m))
+        return res;
+    if(validate_maze(&m,&sr,&sc,1)&&eval_gates(&m,expressions_dir,gopen))
+    {
+        found=solve(&m,sr,sc,&res.path,gopen);
+        if(found>0)
+            res.status=MAZE_SOLVABLE;
+        else if(!found)
+            res.status=MAZE_UNSOLVABLE;
+    }
+    free_maze(&m);
     return res;
 }
 
@@ -358,9 +446,9 @@ MazeResult check_maze(const char *maze_path) {
     sys_err=NULL;
     if(!read_maze(maze_path,&m))
         return res;
-    if(validate_maze(&m,&sr,&sc))
+    if(validate_maze(&m,&sr,&sc,0))
     {
-        found=solve(&m,sr,sc,&res.path);
+        found=solve(&m,sr,sc,&res.path,NULL);
         if(found>0)
             res.status=MAZE_SOLVABLE;
         else if(!found)
