@@ -27,6 +27,7 @@ int bi_cmp(const BigInt *a,const BigInt *b);
 
 /* width policy: fixed modes truncate to N, UNLIMITED uses min_bits+1 */
 BigInt *bi_truncate(const BigInt *x,size_t n);
+BigInt *bi_zext(const BigInt *x,size_t n);
 BigInt *bi_sext(const BigInt *x,size_t n);
 BigInt *bi_norm_unl(const BigInt *x);
 

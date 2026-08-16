@@ -397,6 +397,11 @@ static int apply_shift(char op,BigInt *a,BigInt *b,BigInt **out) {
                 return ST_SYSERR;
             }
             r=bi_shl(a,k);
+            if(!r)
+            {
+                sys_err="shift result is too large to allocate";
+                return ST_SYSERR;
+            }
         }
         else
             r=shift_ge(b,bi_width(a),&k)?bi_zero(bi_width(a)):bi_shr_log(a,k);

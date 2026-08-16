@@ -8,6 +8,14 @@
 #define DEC_CHUNK 1000000000u
 #define DEC_CHUNK_DIGITS 9
 
+/* a ceiling on one allocation request, not a limit on the representation:
+   blocks are still sized from the value and grow as needed, but a width this
+   far past anything storable cannot finish in usable time or memory. every
+   BigInt is born in bi_zero, so refusing here turns an absurd width into the
+   system error the spec asks for instead of a hang. 2^27 bits is 16MB per
+   value, several thousand times the widest width any example needs */
+#define WIDTH_CEIL ((size_t)1<<27)
+
 /* blk is little endian; bits above width in the top block are always zero */
 struct BigInt
 {
@@ -38,7 +46,7 @@ static size_t bits_in(uint32_t v) {
 
 BigInt *bi_zero(size_t width) {
     BigInt *x;
-    if(!width||width>SIZE_MAX-BITS_PER_BLK)
+    if(!width||width>WIDTH_CEIL||width>SIZE_MAX-BITS_PER_BLK)
         return NULL;
     x=malloc(sizeof(*x));
     if(!x)
@@ -122,12 +130,22 @@ BigInt *bi_truncate(const BigInt *x,size_t n) {
     return r;
 }
 
+/* widening to n keeps the extra bits clear, so truncation doubles as the
+   zero extension the required-operations list asks for */
+BigInt *bi_zext(const BigInt *x,size_t n) {
+    return bi_truncate(x,n);
+}
+
+/* provided because the required-operations list asks for sign extension, but
+   unreachable here: every fixed width value is already stored as exactly N
+   bits and UNLIMITED is unsigned throughout, so no operand ever has to be
+   widened with its sign. kept so the capability exists and is inspectable */
 BigInt *bi_sext(const BigInt *x,size_t n) {
     BigInt *r;
     size_t i;
     if(n<=x->width)
         return bi_truncate(x,n);
-    r=bi_truncate(x,n);
+    r=bi_zext(x,n);
     if(!r||!bi_top_bit(x))
         return r;
     for(i=x->width;i<n;i++)

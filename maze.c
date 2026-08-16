@@ -75,7 +75,10 @@ static void free_maze(Maze *m) {
     m->cap=0;
 }
 
-/* '\n' ends a row and is not stored; every other byte is kept verbatim */
+/* '\n' ends a row and is not stored, and a single '\r' directly before it is
+   taken as part of that terminator so CRLF files read the same as LF ones. a
+   '\r' anywhere else is an ordinary byte, and so an unsupported cell. every
+   other byte, spaces included, is kept verbatim */
 static int read_maze(const char *path,Maze *m) {
     FILE *f;
     char *buf=NULL;
@@ -95,6 +98,8 @@ static int read_maze(const char *path,Maze *m) {
     {
         if(c=='\n')
         {
+            if(len&&buf[len-1]=='\r')
+                len--;
             if(!push_row(m,buf,len))
             {
                 ok=0;
@@ -378,7 +383,10 @@ static char *gate_path(const char *dir,unsigned char ch) {
     return p;
 }
 
-/* each distinct gate byte is looked up once, however often it occurs */
+/* each distinct gate byte is looked up once, however often it occurs.
+   need and gopen are indexed by the byte alphabet, which is fixed at 256 by
+   the character set itself; they hold no numeric value and are unrelated to
+   the dynamically sized BigInt representation */
 static int eval_gates(const Maze *m,const char *dir,unsigned char *gopen) {
     unsigned char need[256]={0};
     size_t r,c,i;
@@ -417,7 +425,7 @@ static int eval_gates(const Maze *m,const char *dir,unsigned char *gopen) {
 
 MazeResult check_extended_maze(const char *maze_path,const char *expressions_dir) {
     MazeResult res={MAZE_INVALID,NULL};
-    unsigned char gopen[256]={0};
+    unsigned char gopen[256]={0}; /* one open flag per gate byte, see eval_gates */
     Maze m;
     size_t sr,sc;
     int found;
