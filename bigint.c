@@ -232,6 +232,135 @@ BigInt *bi_mul(const BigInt *a,const BigInt *b) {
     return r;
 }
 
+static int buf_cmp(const uint32_t *a,size_t an,const uint32_t *b,size_t bn) {
+    size_t n=an>bn?an:bn;
+    while(n)
+    {
+        uint32_t av=n-1<an?a[n-1]:0u;
+        uint32_t bv=n-1<bn?b[n-1]:0u;
+        if(av!=bv)
+            return av>bv?1:-1;
+        n--;
+    }
+    return 0;
+}
+
+static void buf_sub(uint32_t *a,size_t an,const uint32_t *b,size_t bn) {
+    uint64_t borrow=0;
+    size_t i;
+    for(i=0;i<an;i++)
+    {
+        uint64_t av=a[i];
+        uint64_t sub=(i<bn?b[i]:0u)+borrow;
+        if(av>=sub)
+        {
+            a[i]=(uint32_t)(av-sub);
+            borrow=0;
+        }
+        else
+        {
+            a[i]=(uint32_t)(av+((uint64_t)1<<BITS_PER_BLK)-sub);
+            borrow=1;
+        }
+    }
+}
+
+static void buf_shl1(uint32_t *a,size_t n,unsigned bit) {
+    unsigned carry=bit;
+    size_t i;
+    for(i=0;i<n;i++)
+    {
+        unsigned nc=a[i]>>(BITS_PER_BLK-1);
+        a[i]=(a[i]<<1)|carry;
+        carry=nc;
+    }
+}
+
+/* schoolbook binary long division on unsigned magnitudes; a and b may have
+   differing widths, zero extended as elsewhere in this file. both outputs
+   come back sized to a's width, which is always enough since 0<=q<=a and
+   0<=r<=a */
+static int udivmod(const BigInt *a,const BigInt *b,BigInt **q_out,BigInt **r_out) {
+    size_t rn=(a->nblk>b->nblk?a->nblk:b->nblk)+1,i=a->width;
+    uint32_t *q,*r;
+    BigInt *qx,*rx;
+
+    q=calloc(a->nblk,sizeof(uint32_t));
+    r=calloc(rn,sizeof(uint32_t));
+    if(!q||!r)
+    {
+        free(q);
+        free(r);
+        return 0;
+    }
+    while(i)
+    {
+        unsigned bit;
+        i--;
+        bit=(unsigned)((a->blk[i/BITS_PER_BLK]>>(i%BITS_PER_BLK))&1u);
+        buf_shl1(r,rn,bit);
+        if(buf_cmp(r,rn,b->blk,b->nblk)>=0)
+        {
+            buf_sub(r,rn,b->blk,b->nblk);
+            q[i/BITS_PER_BLK]|=(uint32_t)1u<<(i%BITS_PER_BLK);
+        }
+    }
+    qx=bi_zero(a->width);
+    rx=qx?bi_zero(a->width):NULL;
+    if(!qx||!rx)
+    {
+        free(q);
+        free(r);
+        bi_free(qx);
+        bi_free(rx);
+        return 0;
+    }
+    memcpy(qx->blk,q,qx->nblk*sizeof(uint32_t));
+    memcpy(rx->blk,r,rx->nblk*sizeof(uint32_t));
+    mask_bits(qx->blk,qx->nblk,qx->width);
+    mask_bits(rx->blk,rx->nblk,rx->width);
+    free(q);
+    free(r);
+    *q_out=qx;
+    *r_out=rx;
+    return 1;
+}
+
+/* division on unsigned magnitudes, sign reapplied afterward and truncated
+   back to a's width. this reproduces hardware wraparound (INT_MIN/-1 stays
+   INT_MIN) for free, since negating the magnitude and truncating to the
+   same width it came from is exactly what two's complement negation does;
+   no case ever routes through a built in signed divide */
+BigInt *bi_divmod(const BigInt *a,const BigInt *b,int is_signed,BigInt **rem) {
+    int nega=is_signed&&bi_top_bit(a);
+    int negb=is_signed&&bi_top_bit(b);
+    BigInt *am=nega?bi_neg(a):bi_copy(a);
+    BigInt *bm=negb?bi_neg(b):bi_copy(b);
+    BigInt *q,*r,*qs,*rs;
+    if(!am||!bm||!udivmod(am,bm,&q,&r))
+    {
+        bi_free(am);
+        bi_free(bm);
+        return NULL;
+    }
+    bi_free(am);
+    bi_free(bm);
+    qs=nega!=negb?bi_neg(q):q;
+    rs=nega?bi_neg(r):r;
+    if(qs!=q)
+        bi_free(q);
+    if(rs!=r)
+        bi_free(r);
+    if(!qs||!rs)
+    {
+        bi_free(qs);
+        bi_free(rs);
+        return NULL;
+    }
+    *rem=rs;
+    return qs;
+}
+
 BigInt *bi_neg(const BigInt *x) {
     BigInt *r=bi_zero(x->width);
     size_t i;

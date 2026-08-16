@@ -45,6 +45,12 @@ BigInt *bi_add(const BigInt *a,const BigInt *b);
 BigInt *bi_sub_exact(const BigInt *a,const BigInt *b);
 BigInt *bi_sub_wrap(const BigInt *a,const BigInt *b,size_t n);
 BigInt *bi_mul(const BigInt *a,const BigInt *b);
+
+/* truncating division; remainder takes the sign of a. result width is a's
+   width. the caller must reject b==0 first, that is EXPR_INVALID, not a
+   system error */
+BigInt *bi_divmod(const BigInt *a,const BigInt *b,int is_signed,BigInt **rem);
+
 BigInt *bi_neg(const BigInt *x);
 
 #endif
